@@ -6,16 +6,12 @@ class ReportCard extends StatelessWidget {
   final ReportModel report;
   final VoidCallback? onTap;
 
-  const ReportCard({
-    super.key,
-    required this.report,
-    this.onTap,
-  });
+  const ReportCard({super.key, required this.report, this.onTap});
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      margin: const EdgeInsets.symmetric(vertical: 8),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: AppColors.white,
@@ -47,40 +43,59 @@ class ReportCard extends StatelessWidget {
                     ),
                   ),
                 ),
-                _buildPriorityChip(report.priority),
+                _buildPriorityChip(report.priorityText),
               ],
             ),
             const SizedBox(height: 8),
             Text(
               report.description,
-              style: const TextStyle(
-                fontSize: 14,
-                color: AppColors.grey,
-              ),
+              style: const TextStyle(fontSize: 14, color: AppColors.grey),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
             ),
             const SizedBox(height: 12),
             Row(
               children: [
-                const Icon(Icons.calendar_today, size: 16, color: AppColors.grey),
+                const Icon(
+                  Icons.calendar_today,
+                  size: 16,
+                  color: AppColors.grey,
+                ),
                 const SizedBox(width: 4),
                 Text(
-                  '${report.reportDate.day}/${report.reportDate.month}/${report.reportDate.year}',
+                  '${report.reportedDate.day}/${report.reportedDate.month}/${report.reportedDate.year}',
                   style: const TextStyle(fontSize: 12, color: AppColors.grey),
                 ),
                 const SizedBox(width: 16),
                 const Icon(Icons.location_on, size: 16, color: AppColors.grey),
                 const SizedBox(width: 4),
-                const Text(
-                  'Ubicación',
-                  style: TextStyle(fontSize: 12, color: AppColors.grey),
+                Text(
+                  'Lat: ${report.lat}, Long: ${report.long}',
+                  style: const TextStyle(fontSize: 12, color: AppColors.grey),
                 ),
               ],
             ),
+            if (report.user != null) ...[
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  const Icon(Icons.person, size: 16, color: AppColors.grey),
+                  const SizedBox(width: 4),
+                  Text(
+                    'Reportado por: ${report.user!.fullName}',
+                    style: const TextStyle(fontSize: 12, color: AppColors.grey),
+                  ),
+                ],
+              ),
+            ],
             if (report.tags.isNotEmpty) ...[
               const SizedBox(height: 8),
               Wrap(
                 spacing: 8,
-                children: report.tags.map((tag) => _buildTag(tag)).toList(),
+                children: report.tags
+                    .take(3)
+                    .map((tag) => _buildTag(tag))
+                    .toList(),
               ),
             ],
           ],
@@ -93,23 +108,22 @@ class ReportCard extends StatelessWidget {
     Color backgroundColor;
     Color textColor;
 
-    switch (priority.toLowerCase()) {
-      case 'alta':
-      case 'crítica':
-        backgroundColor = AppColors.redLight;
-        textColor = AppColors.red;
+    switch (priority.toUpperCase()) {
+      case 'ALTA':
+        backgroundColor = Colors.red.shade100;
+        textColor = Colors.red;
         break;
-      case 'media':
-        backgroundColor = AppColors.orangeLight;
-        textColor = AppColors.orange;
+      case 'MEDIA':
+        backgroundColor = Colors.orange.shade100;
+        textColor = Colors.orange;
         break;
-      case 'baja':
-        backgroundColor = AppColors.greenLight;
-        textColor = AppColors.green;
+      case 'BAJA':
+        backgroundColor = Colors.green.shade100;
+        textColor = Colors.green;
         break;
       default:
-        backgroundColor = AppColors.lightGrey;
-        textColor = AppColors.grey;
+        backgroundColor = Colors.grey.shade100;
+        textColor = Colors.grey;
     }
 
     return Container(
@@ -130,19 +144,35 @@ class ReportCard extends StatelessWidget {
   }
 
   Widget _buildTag(String tag) {
+    // Generar colores basados en el hash del tag para consistencia
+    final colors = [
+      Colors.blue,
+      Colors.green,
+      Colors.orange,
+      Colors.purple,
+      Colors.teal,
+      Colors.indigo,
+      Colors.brown,
+      Colors.pink,
+    ];
+
+    final colorIndex = tag.hashCode % colors.length;
+    final color = colors[colorIndex];
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: AppColors.blueLight,
+        color: color.shade100,
         borderRadius: BorderRadius.circular(12),
       ),
       child: Text(
         tag,
-        style: const TextStyle(
+        style: TextStyle(
           fontSize: 12,
-          color: AppColors.blue,
+          color: color.shade700,
+          fontWeight: FontWeight.w500,
         ),
       ),
     );
   }
-} 
+}

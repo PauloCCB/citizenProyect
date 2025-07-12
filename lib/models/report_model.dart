@@ -1,48 +1,58 @@
+import 'package:flutter/material.dart';
+import 'user_model.dart';
+
 class ReportModel {
   final String id;
   final String title;
   final String description;
-  final String generatedDetails;
-  final DateTime reportDate;
+  final String? generatedDetails;
+  final DateTime reportedDate;
   final List<String> tags;
-  final double latitude;
-  final double longitude;
-  final String priority;
+  final String lat;
+  final String long;
+  final String? priority;
+  final int? priorityNumber;
   final List<String> images;
-  final List<String> relatedPersons;
-  final DateTime createdAt;
-  final bool isResolved;
+  final UserModel? user;
+  final DateTime? createdAt;
+  final bool? isResolved;
 
   ReportModel({
     required this.id,
     required this.title,
     required this.description,
-    required this.generatedDetails,
-    required this.reportDate,
+    this.generatedDetails,
+    required this.reportedDate,
     required this.tags,
-    required this.latitude,
-    required this.longitude,
-    required this.priority,
+    required this.lat,
+    required this.long,
+    this.priority,
+    this.priorityNumber,
     required this.images,
-    required this.relatedPersons,
-    required this.createdAt,
-    this.isResolved = false,
+    this.user,
+    this.createdAt,
+    this.isResolved,
   });
 
   factory ReportModel.fromJson(Map<String, dynamic> json) {
     return ReportModel(
-      id: json['id'],
-      title: json['title'],
-      description: json['description'],
+      id: json['id'] ?? '',
+      title: json['title'] ?? '',
+      description: json['description'] ?? '',
       generatedDetails: json['generated_details'],
-      reportDate: DateTime.parse(json['report_date']),
-      tags: List<String>.from(json['tags']),
-      latitude: json['latitude'].toDouble(),
-      longitude: json['longitude'].toDouble(),
-      priority: json['priority'],
-      images: List<String>.from(json['images']),
-      relatedPersons: List<String>.from(json['related_persons']),
-      createdAt: DateTime.parse(json['created_at']),
+      reportedDate: DateTime.parse(
+        json['reported_date'] ?? DateTime.now().toIso8601String(),
+      ),
+      tags: List<String>.from(json['tags'] ?? []),
+      lat: json['lat']?.toString() ?? '0.0',
+      long: json['long']?.toString() ?? '0.0',
+      priority: json['priority']?.toString(),
+      priorityNumber: json['priority'] is int ? json['priority'] : null,
+      images: List<String>.from(json['images'] ?? []),
+      user: json['user'] != null ? UserModel.fromJson(json['user']) : null,
+      createdAt: json['created_at'] != null
+          ? DateTime.parse(json['created_at'])
+          : null,
       isResolved: json['is_resolved'] ?? false,
     );
   }
@@ -53,16 +63,40 @@ class ReportModel {
       'title': title,
       'description': description,
       'generated_details': generatedDetails,
-      'report_date': reportDate.toIso8601String(),
+      'reported_date': reportedDate.toIso8601String(),
       'tags': tags,
-      'latitude': latitude,
-      'longitude': longitude,
-      'priority': priority,
+      'lat': lat,
+      'long': long,
+      'priority': priorityNumber ?? priority,
       'images': images,
-      'related_persons': relatedPersons,
-      'created_at': createdAt.toIso8601String(),
+      'user': user?.toJson(),
+      'created_at': createdAt?.toIso8601String(),
       'is_resolved': isResolved,
     };
+  }
+
+  String get priorityText {
+    if (priority != null) return priority!;
+    if (priorityNumber != null) {
+      if (priorityNumber! >= 7) return 'ALTA';
+      if (priorityNumber! >= 4) return 'MEDIA';
+      return 'BAJA';
+    }
+    return 'BAJA';
+  }
+
+  Color get priorityColor {
+    final p = priorityText.toUpperCase();
+    switch (p) {
+      case 'ALTA':
+        return Colors.red;
+      case 'MEDIA':
+        return Colors.orange;
+      case 'BAJA':
+        return Colors.green;
+      default:
+        return Colors.grey;
+    }
   }
 
   ReportModel copyWith({
@@ -70,13 +104,14 @@ class ReportModel {
     String? title,
     String? description,
     String? generatedDetails,
-    DateTime? reportDate,
+    DateTime? reportedDate,
     List<String>? tags,
-    double? latitude,
-    double? longitude,
+    String? lat,
+    String? long,
     String? priority,
+    int? priorityNumber,
     List<String>? images,
-    List<String>? relatedPersons,
+    UserModel? user,
     DateTime? createdAt,
     bool? isResolved,
   }) {
@@ -85,15 +120,16 @@ class ReportModel {
       title: title ?? this.title,
       description: description ?? this.description,
       generatedDetails: generatedDetails ?? this.generatedDetails,
-      reportDate: reportDate ?? this.reportDate,
+      reportedDate: reportedDate ?? this.reportedDate,
       tags: tags ?? this.tags,
-      latitude: latitude ?? this.latitude,
-      longitude: longitude ?? this.longitude,
+      lat: lat ?? this.lat,
+      long: long ?? this.long,
       priority: priority ?? this.priority,
+      priorityNumber: priorityNumber ?? this.priorityNumber,
       images: images ?? this.images,
-      relatedPersons: relatedPersons ?? this.relatedPersons,
+      user: user ?? this.user,
       createdAt: createdAt ?? this.createdAt,
       isResolved: isResolved ?? this.isResolved,
     );
   }
-} 
+}

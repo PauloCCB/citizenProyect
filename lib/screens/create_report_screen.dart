@@ -1,4 +1,6 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import '../constants/app_colors.dart';
 import '../widgets/loading_modal.dart';
 import '../widgets/custom_button.dart';
@@ -19,15 +21,16 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
   final _tagsController = TextEditingController();
   final _latitudeController = TextEditingController();
   final _longitudeController = TextEditingController();
-  final _additionalDetailsController = TextEditingController();
-  final _personController = TextEditingController();
+  final _generatedDetailsController = TextEditingController();
   final _reportService = ReportService();
-  
+
   DateTime _selectedDate = DateTime.now();
-  String _selectedPriority = 'Selecciona la prioridad';
   List<String> _tags = [];
-  List<String> _relatedPersons = [];
+  File? _selectedImage;
+  String? _imageUrl;
+  int? _priority;
   bool _isLoading = false;
+  bool _isUploadingImage = false;
 
   @override
   void dispose() {
@@ -36,8 +39,7 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
     _tagsController.dispose();
     _latitudeController.dispose();
     _longitudeController.dispose();
-    _additionalDetailsController.dispose();
-    _personController.dispose();
+    _generatedDetailsController.dispose();
     super.dispose();
   }
 
@@ -56,29 +58,53 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
     });
   }
 
-  void _addPerson() {
-    if (_personController.text.trim().isNotEmpty) {
+  Future<void> _pickImage() async {
+    final ImagePicker picker = ImagePicker();
+    final XFile? image = await picker.pickImage(source: ImageSource.gallery);
+
+    if (image != null) {
       setState(() {
-        _relatedPersons.add(_personController.text.trim());
-        _personController.clear();
+        _selectedImage = File(image.path);
+        _isUploadingImage = true;
       });
+
+      await _uploadImage();
     }
   }
 
-  void _removePerson(String person) {
+  Future<void> _uploadImage() async {
+    if (_selectedImage == null) return;
+
+    try {
+      final result = await _reportService.uploadImage(_selectedImage!);
+
+      setState(() {
+        _imageUrl = result['imageUrl'];
+        _generatedDetailsController.text = result['generatedDetails'] ?? '';
+        _priority = result['priority'];
+        _isUploadingImage = false;
+      });
+
+      _showSuccessSnackBar('Imagen procesada exitosamente');
+    } catch (e) {
+      setState(() {
+        _isUploadingImage = false;
+      });
+      _showErrorSnackBar('Error al procesar imagen: $e');
+    }
+  }
+
+  void _clearImage() {
     setState(() {
-      _relatedPersons.remove(person);
+      _selectedImage = null;
+      _imageUrl = null;
+      _generatedDetailsController.clear();
+      _priority = null;
     });
   }
 
   Future<void> _submitReport() async {
     if (!_formKey.currentState!.validate()) return;
-    
-    // Validar prioridad
-    if (_selectedPriority == 'Selecciona la prioridad') {
-      _showErrorSnackBar('Debe seleccionar una prioridad');
-      return;
-    }
 
     setState(() => _isLoading = true);
 
@@ -86,39 +112,47 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => const LoadingModal(message: 'Generando reporte...'),
+      builder: (context) => const LoadingModal(message: 'Creando reporte...'),
     );
 
     try {
       final success = await _reportService.createReport(
         title: _titleController.text.trim(),
         description: _descriptionController.text.trim(),
-        generatedDetails: _additionalDetailsController.text.trim(),
+        generatedDetails: _generatedDetailsController.text.trim(),
         reportDate: _selectedDate,
         tags: _tags,
-        latitude: double.tryParse(_latitudeController.text.trim()) ?? 0.0,
-        longitude: double.tryParse(_longitudeController.text.trim()) ?? 0.0,
-        priority: _selectedPriority,
-        images: [], // Por ahora sin imágenes
-        relatedPersons: _relatedPersons,
+        lat: _latitudeController.text.trim(),
+        long: _longitudeController.text.trim(),
+        priority: _priority,
+        images: _imageUrl != null ? [_imageUrl!] : [],
       );
 
       if (mounted) {
         Navigator.pop(context); // Cerrar modal
-        
+
         if (success) {
-          _showSuccessSnackBar('Reporte generado con éxito');
+          _showSuccessSnackBar('Reporte creado exitosamente');
           // Esperar un poco para que se vea el mensaje
-          await Future.delayed(const Duration(seconds: 1));
+          await Future.delayed(const Duration(seconds: 2));
           Navigator.pushReplacementNamed(context, '/dashboard');
         } else {
-          _showErrorSnackBar('Error al generar el reporte');
+          _showErrorSnackBar('Error al crear el reporte');
         }
       }
     } catch (e) {
       if (mounted) {
         Navigator.pop(context); // Cerrar modal
-        _showErrorSnackBar('Error de conexión. Inténtalo nuevamente.');
+        String errorMessage = 'Error al crear el reporte.';
+
+        if (e.toString().contains('Token inválido')) {
+          errorMessage =
+              'Sesión expirada. Por favor, inicia sesión nuevamente.';
+        } else if (e.toString().contains('Error al crear reporte')) {
+          errorMessage = e.toString().replaceFirst('Exception: ', '');
+        }
+
+        _showErrorSnackBar(errorMessage);
       }
     } finally {
       if (mounted) {
@@ -166,11 +200,8 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text(
-                'Completa la información',
-                style: TextStyle(
-                  fontSize: 14,
-                  color: AppColors.grey,
-                ),
+                'Completa la información del reporte',
+                style: TextStyle(fontSize: 14, color: AppColors.grey),
               ),
               const SizedBox(height: 24),
               // Título del reporte
@@ -190,15 +221,14 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
                 controller: _descriptionController,
                 maxLines: 4,
                 validator: (value) {
-                  return _reportService.validateDescription(value?.trim() ?? '');
+                  return _reportService.validateDescription(
+                    value?.trim() ?? '',
+                  );
                 },
               ),
               const SizedBox(height: 20),
-              // Seleccionar imagen o video
-              _buildImageVideoSection(),
-              const SizedBox(height: 20),
-              // Personas relacionadas
-              _buildRelatedPersonsSection(),
+              // Sección de imagen
+              _buildImageSection(),
               const SizedBox(height: 20),
               // Etiquetas
               _buildTagsSection(),
@@ -209,20 +239,21 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
               // Fecha del reporte
               _buildDateSection(),
               const SizedBox(height: 20),
-              // Prioridad
-              _buildPrioritySection(),
-              const SizedBox(height: 20),
-              // Detalles adicionales
+              // Detalles generados (solo lectura)
               CustomTextField(
-                labelText: 'Detalles Adicionales',
-                hintText: 'Información adicional generada automáticamente...',
-                controller: _additionalDetailsController,
+                labelText: 'Detalles Generados por IA',
+                hintText: 'Se generarán automáticamente al subir una imagen...',
+                controller: _generatedDetailsController,
                 maxLines: 3,
+                enabled: false,
               ),
+              const SizedBox(height: 20),
+              // Mostrar prioridad si está disponible
+              if (_priority != null) _buildPriorityDisplay(),
               const SizedBox(height: 32),
-              // Botón generar reporte
+              // Botón crear reporte
               CustomButton(
-                text: 'Generar Reporte',
+                text: 'Crear Reporte',
                 onPressed: _isLoading ? null : _submitReport,
                 isLoading: _isLoading,
               ),
@@ -234,12 +265,12 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
     );
   }
 
-  Widget _buildImageVideoSection() {
+  Widget _buildImageSection() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text(
-          'Seleccionar Imagen o Video',
+          'Imagen del Problema',
           style: TextStyle(
             fontSize: 16,
             fontWeight: FontWeight.w500,
@@ -249,90 +280,93 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
         const SizedBox(height: 8),
         Container(
           width: double.infinity,
-          height: 150,
+          height: 200,
           decoration: BoxDecoration(
-            border: Border.all(color: Colors.grey.shade300),
-            borderRadius: BorderRadius.circular(8),
+            color: AppColors.lightGrey,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: AppColors.grey, width: 1),
           ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                Icons.camera_alt,
-                size: 40,
-                color: Colors.grey.shade400,
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                'Agrega evidencia visual',
-                style: TextStyle(
-                  fontSize: 14,
-                  color: AppColors.grey,
+          child: _selectedImage != null
+              ? Stack(
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: Image.file(
+                        _selectedImage!,
+                        width: double.infinity,
+                        height: 200,
+                        fit: BoxFit.cover,
+                      ),
+                    ),
+                    if (_isUploadingImage)
+                      Container(
+                        width: double.infinity,
+                        height: 200,
+                        decoration: BoxDecoration(
+                          color: Colors.black.withOpacity(0.5),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Center(
+                          child: CircularProgressIndicator(color: Colors.white),
+                        ),
+                      ),
+                    Positioned(
+                      top: 8,
+                      right: 8,
+                      child: IconButton(
+                        onPressed: _clearImage,
+                        icon: const Icon(Icons.close, color: Colors.white),
+                        style: IconButton.styleFrom(
+                          backgroundColor: Colors.red,
+                          foregroundColor: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ],
+                )
+              : InkWell(
+                  onTap: _pickImage,
+                  child: const Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.add_photo_alternate,
+                        size: 48,
+                        color: AppColors.grey,
+                      ),
+                      SizedBox(height: 8),
+                      Text(
+                        'Seleccionar Imagen',
+                        style: TextStyle(fontSize: 16, color: AppColors.grey),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-              const SizedBox(height: 8),
-              TextButton(
-                onPressed: () {
-                  // Implementar selección de archivo
-                  _showErrorSnackBar('Funcionalidad en desarrollo');
-                },
-                child: const Text('Seleccionar Archivo'),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildRelatedPersonsSection() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          'Personas Relacionadas',
-          style: TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.w500,
-            color: AppColors.black,
-          ),
         ),
         const SizedBox(height: 8),
         Row(
           children: [
             Expanded(
-              child: CustomTextField(
-                hintText: 'Agregar persona...',
-                controller: _personController,
+              child: ElevatedButton.icon(
+                onPressed: _pickImage,
+                icon: const Icon(Icons.photo_library),
+                label: const Text('Seleccionar'),
               ),
             ),
-            const SizedBox(width: 8),
-            Container(
-              decoration: BoxDecoration(
-                color: AppColors.primary,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: IconButton(
-                icon: const Icon(Icons.add, color: AppColors.white),
-                onPressed: _addPerson,
+            const SizedBox(width: 12),
+            Expanded(
+              child: ElevatedButton.icon(
+                onPressed: _clearImage,
+                icon: const Icon(Icons.clear),
+                label: const Text('Limpiar'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.red,
+                  foregroundColor: Colors.white,
+                ),
               ),
             ),
           ],
         ),
-        if (_relatedPersons.isNotEmpty) ...[
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 4,
-            children: _relatedPersons.map((person) => Chip(
-              label: Text(person),
-              onDeleted: () => _removePerson(person),
-              deleteIcon: const Icon(Icons.close, size: 16),
-              backgroundColor: AppColors.greenLight,
-              labelStyle: const TextStyle(color: AppColors.green),
-            )).toList(),
-          ),
-        ],
       ],
     );
   }
@@ -353,38 +387,34 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
         Row(
           children: [
             Expanded(
-              child: CustomTextField(
-                hintText: 'Agregar etiqueta...',
+              child: TextField(
                 controller: _tagsController,
+                decoration: const InputDecoration(
+                  hintText: 'Escribe una etiqueta...',
+                  border: OutlineInputBorder(),
+                ),
+                onSubmitted: (_) => _addTag(),
               ),
             ),
-            const SizedBox(width: 8),
-            Container(
-              decoration: BoxDecoration(
-                color: AppColors.primary,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: IconButton(
-                icon: const Icon(Icons.add, color: AppColors.white),
-                onPressed: _addTag,
-              ),
-            ),
+            const SizedBox(width: 12),
+            ElevatedButton(onPressed: _addTag, child: const Text('Agregar')),
           ],
         ),
-        if (_tags.isNotEmpty) ...[
-          const SizedBox(height: 8),
+        const SizedBox(height: 8),
+        if (_tags.isNotEmpty)
           Wrap(
             spacing: 8,
             runSpacing: 4,
-            children: _tags.map((tag) => Chip(
-              label: Text(tag),
-              onDeleted: () => _removeTag(tag),
-              deleteIcon: const Icon(Icons.close, size: 16),
-              backgroundColor: AppColors.blueLight,
-              labelStyle: const TextStyle(color: AppColors.blue),
-            )).toList(),
+            children: _tags
+                .map(
+                  (tag) => Chip(
+                    label: Text(tag),
+                    onDeleted: () => _removeTag(tag),
+                    backgroundColor: Colors.blue.shade100,
+                  ),
+                )
+                .toList(),
           ),
-        ],
       ],
     );
   }
@@ -394,7 +424,7 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text(
-          'Ubicación',
+          'Ubicación *',
           style: TextStyle(
             fontSize: 16,
             fontWeight: FontWeight.w500,
@@ -402,56 +432,29 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
           ),
         ),
         const SizedBox(height: 8),
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            border: Border.all(color: AppColors.primary),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: InkWell(
-            onTap: () {
-              // Implementar obtener ubicación actual
-              setState(() {
-                _latitudeController.text = '4.711';
-                _longitudeController.text = '-74.0721';
-              });
-            },
-            child: const Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(
-                  Icons.location_on,
-                  color: AppColors.primary,
-                ),
-                SizedBox(width: 8),
-                Text(
-                  'Agregar Ubicación Actual',
-                  style: TextStyle(
-                    color: AppColors.primary,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-        const SizedBox(height: 12),
         Row(
           children: [
             Expanded(
               child: CustomTextField(
-                hintText: '4.711',
+                labelText: 'Latitud',
+                hintText: '-12.046374',
                 controller: _latitudeController,
                 keyboardType: TextInputType.number,
+                validator: (value) {
+                  return _reportService.validateLocation(value?.trim() ?? '');
+                },
               ),
             ),
             const SizedBox(width: 16),
             Expanded(
               child: CustomTextField(
-                hintText: '-74.0721',
+                labelText: 'Longitud',
+                hintText: '-77.042793',
                 controller: _longitudeController,
                 keyboardType: TextInputType.number,
+                validator: (value) {
+                  return _reportService.validateLocation(value?.trim() ?? '');
+                },
               ),
             ),
           ],
@@ -478,8 +481,8 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
             final DateTime? picked = await showDatePicker(
               context: context,
               initialDate: _selectedDate,
-              firstDate: DateTime(2000),
-              lastDate: DateTime(2101),
+              firstDate: DateTime(2020),
+              lastDate: DateTime.now(),
             );
             if (picked != null && picked != _selectedDate) {
               setState(() {
@@ -489,18 +492,18 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
           },
           child: Container(
             width: double.infinity,
-            padding: const EdgeInsets.all(12),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: BoxDecoration(
-              border: Border.all(color: Colors.grey.shade300),
+              border: Border.all(color: AppColors.grey),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
                   '${_selectedDate.day}/${_selectedDate.month}/${_selectedDate.year}',
                   style: const TextStyle(fontSize: 16),
                 ),
-                const Spacer(),
                 const Icon(Icons.calendar_today, color: AppColors.grey),
               ],
             ),
@@ -510,12 +513,26 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
     );
   }
 
-  Widget _buildPrioritySection() {
+  Widget _buildPriorityDisplay() {
+    String priorityText;
+    Color priorityColor;
+
+    if (_priority! >= 7) {
+      priorityText = 'ALTA';
+      priorityColor = Colors.red;
+    } else if (_priority! >= 4) {
+      priorityText = 'MEDIA';
+      priorityColor = Colors.orange;
+    } else {
+      priorityText = 'BAJA';
+      priorityColor = Colors.green;
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text(
-          'Prioridad *',
+          'Prioridad Detectada',
           style: TextStyle(
             fontSize: 16,
             fontWeight: FontWeight.w500,
@@ -523,33 +540,30 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
           ),
         ),
         const SizedBox(height: 8),
-        DropdownButtonFormField<String>(
-          value: _selectedPriority,
-          decoration: InputDecoration(
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: BorderSide(color: Colors.grey.shade300),
-            ),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(
+            color: priorityColor.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: priorityColor),
           ),
-          items: [
-            'Selecciona la prioridad',
-            'Baja',
-            'Media',
-            'Alta',
-            'Crítica'
-          ].map((String value) {
-            return DropdownMenuItem<String>(
-              value: value,
-              child: Text(value),
-            );
-          }).toList(),
-          onChanged: (String? newValue) {
-            setState(() {
-              _selectedPriority = newValue!;
-            });
-          },
+          child: Row(
+            children: [
+              Icon(Icons.warning, color: priorityColor),
+              const SizedBox(width: 8),
+              Text(
+                '$priorityText (Nivel $_priority)',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: priorityColor,
+                ),
+              ),
+            ],
+          ),
         ),
+        const SizedBox(height: 8),
       ],
     );
   }
-} 
+}

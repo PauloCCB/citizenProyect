@@ -1,4 +1,7 @@
+import 'dart:convert';
 import '../models/user_model.dart';
+import 'api_service.dart';
+import 'storage_service.dart';
 
 class AuthService {
   static final AuthService _instance = AuthService._internal();
@@ -11,60 +14,103 @@ class AuthService {
 
   bool get isLoggedIn => _currentUser != null;
 
-  Future<bool> login(String email, String password) async {
+  // Inicializar usuario desde storage
+  Future<void> initializeUser() async {
     try {
-      // Simular llamada a API
-      await Future.delayed(const Duration(seconds: 2));
-      
-      // Simulación de login exitoso
-      _currentUser = UserModel(
-        id: '1',
-        email: email,
-        name: 'Usuario',
-        lastName: 'Demo',
-        phoneNumber: '+51 123456789',
-        createdAt: DateTime.now(),
-        lastLogin: DateTime.now(),
-      );
-      
-      return true;
+      final userData = await StorageService.getUserData();
+      if (userData != null) {
+        _currentUser = UserModel.fromJson(json.decode(userData));
+      }
     } catch (e) {
-      return false;
+      // Si hay error al cargar datos, limpiar storage
+      await StorageService.clearAll();
     }
   }
 
+  // Login con API
+  Future<bool> login(String email, String password) async {
+    try {
+      final response = await ApiService.post('/auth/login', {
+        'email': email,
+        'password': password,
+      });
+
+      if (response['success'] == true) {
+        _currentUser = UserModel.fromJson(response);
+
+        // Guardar token y datos del usuario
+        if (_currentUser!.token != null) {
+          await StorageService.saveToken(_currentUser!.token!);
+          await StorageService.saveUserData(
+            json.encode(_currentUser!.toJson()),
+          );
+        }
+
+        return true;
+      }
+      return false;
+    } catch (e) {
+      throw Exception('Error al iniciar sesión: $e');
+    }
+  }
+
+  // Registro con API
   Future<bool> register({
     required String email,
     required String password,
-    required String name,
+    required String firstName,
     required String lastName,
     required String phoneNumber,
   }) async {
     try {
-      // Simular llamada a API
-      await Future.delayed(const Duration(seconds: 2));
-      
-      // Simulación de registro exitoso
-      return true;
-    } catch (e) {
+      final response = await ApiService.post('/auth/register', {
+        'email': email,
+        'password': password,
+        'firstName': firstName,
+        'lastName': lastName,
+        'phoneNumer': phoneNumber, // API usa phoneNumer
+        'isActive': true,
+      });
+
+      if (response['success'] == true) {
+        return true;
+      }
       return false;
+    } catch (e) {
+      throw Exception('Error al registrar usuario: $e');
     }
   }
 
+  // Logout
   Future<void> logout() async {
-    _currentUser = null;
+    try {
+      await StorageService.clearAll();
+      _currentUser = null;
+    } catch (e) {
+      // Aún así limpiar el usuario local
+      _currentUser = null;
+    }
   }
 
-  Future<bool> resetPassword(String email) async {
+  // Verificar si el token es válido
+  Future<bool> isTokenValid() async {
     try {
-      // Simular llamada a API
-      await Future.delayed(const Duration(seconds: 2));
+      final token = await StorageService.getToken();
+      if (token == null) return false;
+
+      // Hacer una llamada simple para verificar el token
+      await ApiService.get(
+        '/incidencia',
+        requiresAuth: true,
+        queryParams: {'limit': '1'},
+      );
       return true;
     } catch (e) {
       return false;
     }
   }
 
+  // Validaciones
   bool validateEmail(String email) {
     return RegExp(r'^[^@]+@[^@]+\.[^@]+').hasMatch(email);
   }
@@ -92,4 +138,4 @@ class AuthService {
     }
     return null;
   }
-} 
+}

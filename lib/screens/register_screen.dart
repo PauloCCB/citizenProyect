@@ -20,7 +20,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _lastNameController = TextEditingController();
   final _phoneController = TextEditingController();
   final _authService = AuthService();
-  
+
   bool _isLoading = false;
 
   @override
@@ -42,32 +42,49 @@ class _RegisterScreenState extends State<RegisterScreen> {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => const LoadingModal(message: 'Registrando usuario...'),
+      builder: (context) =>
+          const LoadingModal(message: 'Registrando usuario...'),
     );
 
     try {
       final success = await _authService.register(
         email: _emailController.text.trim(),
         password: _passwordController.text.trim(),
-        name: _nameController.text.trim(),
+        firstName: _nameController.text.trim(),
         lastName: _lastNameController.text.trim(),
         phoneNumber: _phoneController.text.trim(),
       );
 
       if (mounted) {
         Navigator.pop(context); // Cerrar modal
-        
+
         if (success) {
           _showSuccessSnackBar('Registro exitoso. Ya puedes iniciar sesión.');
+          // Esperar un momento para que se vea el mensaje
+          await Future.delayed(const Duration(seconds: 1));
           Navigator.pushReplacementNamed(context, '/login');
         } else {
-          _showErrorSnackBar('Error al registrar usuario. Inténtalo nuevamente.');
+          _showErrorSnackBar(
+            'Error al registrar usuario. Inténtalo nuevamente.',
+          );
         }
       }
     } catch (e) {
       if (mounted) {
         Navigator.pop(context); // Cerrar modal
-        _showErrorSnackBar('Error de conexión. Inténtalo nuevamente.');
+        String errorMessage = 'Error de conexión. Inténtalo nuevamente.';
+
+        // Personalizar mensaje según el tipo de error
+        if (e.toString().contains('Error al registrar usuario')) {
+          errorMessage = e.toString().replaceFirst('Exception: ', '');
+        } else if (e.toString().contains('Datos inválidos')) {
+          errorMessage =
+              'Los datos ingresados no son válidos. Verifica la información.';
+        } else if (e.toString().contains('Error de conexión')) {
+          errorMessage = 'Error de conexión. Verifica tu conexión a internet.';
+        }
+
+        _showErrorSnackBar(errorMessage);
       }
     } finally {
       if (mounted) {
@@ -169,7 +186,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   controller: _phoneController,
                   keyboardType: TextInputType.phone,
                   validator: (value) {
-                    return _authService.validatePhoneNumber(value?.trim() ?? '');
+                    return _authService.validatePhoneNumber(
+                      value?.trim() ?? '',
+                    );
                   },
                 ),
                 const SizedBox(height: 32),
@@ -202,4 +221,4 @@ class _RegisterScreenState extends State<RegisterScreen> {
       ),
     );
   }
-} 
+}

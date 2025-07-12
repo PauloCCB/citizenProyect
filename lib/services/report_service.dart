@@ -1,150 +1,103 @@
+import 'dart:io';
 import '../models/report_model.dart';
+import 'api_service.dart';
 
 class ReportService {
   static final ReportService _instance = ReportService._internal();
   factory ReportService() => _instance;
   ReportService._internal();
 
-  final List<ReportModel> _reports = [];
+  List<ReportModel> _reports = [];
+  int _totalReports = 0;
+  int _resolvedReports = 0;
 
   List<ReportModel> get reports => _reports;
+  int get totalReports => _totalReports;
+  int get resolvedReports => _resolvedReports;
 
-  int get totalReports => _reports.length;
+  // Obtener reportes con paginación
+  Future<List<ReportModel>> getReports({int limit = 10, int offset = 1}) async {
+    try {
+      final response = await ApiService.get(
+        '/incidencia',
+        requiresAuth: true,
+        queryParams: {'limit': limit.toString(), 'offset': offset.toString()},
+      );
 
-  int get resolvedReports => _reports.where((report) => report.isResolved).length;
+      if (response['success'] == true) {
+        final List<dynamic> data = response['data'] ?? [];
+        _reports = data.map((json) => ReportModel.fromJson(json)).toList();
 
+        // Actualizar estadísticas
+        _totalReports = _reports.length;
+        _resolvedReports = _reports.where((r) => r.isResolved == true).length;
+
+        return _reports;
+      }
+      return [];
+    } catch (e) {
+      throw Exception('Error al obtener reportes: $e');
+    }
+  }
+
+  // Crear nuevo reporte
   Future<bool> createReport({
     required String title,
     required String description,
-    required String generatedDetails,
+    String? generatedDetails,
     required DateTime reportDate,
     required List<String> tags,
-    required double latitude,
-    required double longitude,
-    required String priority,
+    required String lat,
+    required String long,
+    int? priority,
     required List<String> images,
-    required List<String> relatedPersons,
   }) async {
     try {
-      // Simular llamada a API
-      await Future.delayed(const Duration(seconds: 2));
-      
-      final report = ReportModel(
-        id: DateTime.now().millisecondsSinceEpoch.toString(),
-        title: title,
-        description: description,
-        generatedDetails: generatedDetails,
-        reportDate: reportDate,
-        tags: tags,
-        latitude: latitude,
-        longitude: longitude,
-        priority: priority,
-        images: images,
-        relatedPersons: relatedPersons,
-        createdAt: DateTime.now(),
-      );
-      
-      _reports.add(report);
-      return true;
-    } catch (e) {
-      return false;
-    }
-  }
+      final response = await ApiService.post('/incidencia', {
+        'title': title,
+        'description': description,
+        'generated_details': generatedDetails,
+        'reported_date': reportDate.toIso8601String(),
+        'tags': tags,
+        'lat': lat,
+        'long': long,
+        'priority': priority,
+        'images': images,
+      }, requiresAuth: true);
 
-  Future<List<ReportModel>> getReports() async {
-    // Simular llamada a API
-    await Future.delayed(const Duration(milliseconds: 500));
-    return _reports;
-  }
-
-  Future<ReportModel?> getReportById(String id) async {
-    // Simular llamada a API
-    await Future.delayed(const Duration(milliseconds: 500));
-    try {
-      return _reports.firstWhere((report) => report.id == id);
-    } catch (e) {
-      return null;
-    }
-  }
-
-  Future<bool> updateReport(ReportModel report) async {
-    try {
-      // Simular llamada a API
-      await Future.delayed(const Duration(seconds: 1));
-      
-      final index = _reports.indexWhere((r) => r.id == report.id);
-      if (index != -1) {
-        _reports[index] = report;
+      if (response['success'] == true) {
         return true;
       }
       return false;
     } catch (e) {
-      return false;
+      throw Exception('Error al crear reporte: $e');
     }
   }
 
-  Future<bool> deleteReport(String id) async {
+  // Subir imagen y obtener análisis
+  Future<Map<String, dynamic>> uploadImage(File imageFile) async {
     try {
-      // Simular llamada a API
-      await Future.delayed(const Duration(seconds: 1));
-      
-      _reports.removeWhere((report) => report.id == id);
-      return true;
+      final response = await ApiService.postMultipart(
+        '/files/incidencia/images',
+        imageFile,
+        requiresAuth: true,
+      );
+
+      if (response['success'] == true) {
+        return {
+          'imageUrl': response['imageUrl'],
+          'generatedDetails': response['modelResult']['clase'],
+          'priority': response['modelResult']['urgencia'],
+          'confidence': response['modelResult']['confianza'],
+        };
+      }
+      throw Exception('Error al procesar imagen');
     } catch (e) {
-      return false;
+      throw Exception('Error al subir imagen: $e');
     }
   }
 
-  List<ReportModel> getReportsByPriority(String priority) {
-    return _reports.where((report) => report.priority == priority).toList();
-  }
-
-  List<ReportModel> getReportsByTag(String tag) {
-    return _reports.where((report) => report.tags.contains(tag)).toList();
-  }
-
-  List<ReportModel> getRecentReports({int limit = 10}) {
-    final sortedReports = List<ReportModel>.from(_reports)
-      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
-    return sortedReports.take(limit).toList();
-  }
-
-  // Método para inicializar datos de ejemplo
-  void initializeSampleData() {
-    if (_reports.isEmpty) {
-      _reports.addAll([
-        ReportModel(
-          id: '1',
-          title: 'Bache en la vía principal',
-          description: 'Hay un bache grande que puede causar accidentes',
-          generatedDetails: 'Información adicional del bache',
-          reportDate: DateTime.now().subtract(const Duration(days: 1)),
-          tags: ['infraestructura', 'urgente'],
-          latitude: -12.046374,
-          longitude: -77.042793,
-          priority: 'alta',
-          images: [],
-          relatedPersons: [],
-          createdAt: DateTime.now().subtract(const Duration(days: 1)),
-        ),
-        ReportModel(
-          id: '2',
-          title: 'Basura acumulada',
-          description: 'Acumulación de basura en el parque',
-          generatedDetails: 'Información adicional de la basura',
-          reportDate: DateTime.now().subtract(const Duration(days: 2)),
-          tags: ['limpieza', 'salud'],
-          latitude: -12.046374,
-          longitude: -77.042793,
-          priority: 'media',
-          images: [],
-          relatedPersons: [],
-          createdAt: DateTime.now().subtract(const Duration(days: 2)),
-        ),
-      ]);
-    }
-  }
-
+  // Validaciones
   String? validateTitle(String title) {
     if (title.isEmpty) {
       return 'El título es requerido';
@@ -165,14 +118,47 @@ class ReportService {
     return null;
   }
 
-  String? validatePriority(String priority) {
-    final validPriorities = ['Baja', 'Media', 'Alta', 'Crítica'];
-    if (priority == 'Selecciona la prioridad') {
-      return 'Debe seleccionar una prioridad';
+  String? validateLocation(String location) {
+    if (location.isEmpty) {
+      return 'La ubicación es requerida';
     }
-    if (!validPriorities.contains(priority)) {
-      return 'Prioridad inválida';
+
+    // Validar formato de coordenadas
+    final double? coord = double.tryParse(location);
+    if (coord == null) {
+      return 'Formato de coordenada inválido';
     }
+
     return null;
   }
-} 
+
+  // Obtener colores para tags
+  static List<String> getTagColors() {
+    return [
+      '#FF6B6B', // Rojo
+      '#4ECDC4', // Turquesa
+      '#45B7D1', // Azul
+      '#FFA07A', // Salmón
+      '#98D8C8', // Menta
+      '#F7DC6F', // Amarillo
+      '#BB8FCE', // Morado
+      '#85C1E9', // Azul claro
+      '#F8C471', // Naranja
+      '#82E0AA', // Verde
+    ];
+  }
+
+  // Obtener color para prioridad
+  static String getPriorityColor(String priority) {
+    switch (priority.toUpperCase()) {
+      case 'ALTA':
+        return '#FF6B6B';
+      case 'MEDIA':
+        return '#FFA07A';
+      case 'BAJA':
+        return '#82E0AA';
+      default:
+        return '#DDDDDD';
+    }
+  }
+}

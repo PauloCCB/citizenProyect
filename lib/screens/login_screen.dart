@@ -17,7 +17,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _authService = AuthService();
-  
+
   bool _isLoading = false;
 
   @override
@@ -47,17 +47,32 @@ class _LoginScreenState extends State<LoginScreen> {
 
       if (mounted) {
         Navigator.pop(context); // Cerrar modal
-        
+
         if (success) {
+          // Navegar al dashboard
           Navigator.pushReplacementNamed(context, '/dashboard');
         } else {
-          _showErrorSnackBar('Error al iniciar sesión. Verifica tus credenciales.');
+          _showErrorSnackBar(
+            'Error al iniciar sesión. Verifica tus credenciales.',
+          );
         }
       }
     } catch (e) {
       if (mounted) {
         Navigator.pop(context); // Cerrar modal
-        _showErrorSnackBar('Error de conexión. Inténtalo nuevamente.');
+        String errorMessage = 'Error de conexión. Inténtalo nuevamente.';
+
+        // Personalizar mensaje según el tipo de error
+        if (e.toString().contains('Token inválido')) {
+          errorMessage =
+              'Credenciales inválidas. Verifica tu email y contraseña.';
+        } else if (e.toString().contains('Error de conexión')) {
+          errorMessage = 'Error de conexión. Verifica tu conexión a internet.';
+        } else if (e.toString().contains('Error al iniciar sesión')) {
+          errorMessage = e.toString().replaceFirst('Exception: ', '');
+        }
+
+        _showErrorSnackBar(errorMessage);
       }
     } finally {
       if (mounted) {
@@ -156,7 +171,10 @@ class _LoginScreenState extends State<LoginScreen> {
                     return null;
                   },
                   suffixIcon: IconButton(
-                    icon: const Icon(Icons.visibility_off, color: AppColors.grey),
+                    icon: const Icon(
+                      Icons.visibility_off,
+                      color: AppColors.grey,
+                    ),
                     onPressed: () {
                       // Implementar mostrar/ocultar contraseña
                     },
@@ -185,4 +203,4 @@ class _LoginScreenState extends State<LoginScreen> {
       ),
     );
   }
-} 
+}
